@@ -1,0 +1,160 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustPlay</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body data-phase="idle" class="intro">
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="lights" role="group" aria-label="Window controls">
+      <button class="light close" data-action="close" aria-label="Close">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.5 3.5l5 5m0-5l-5 5"/></svg>
+      </button>
+      <button class="light minimize" data-action="minimize" aria-label="Minimize">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 6h6"/></svg>
+      </button>
+      <button class="light zoom" data-action="fullscreen" aria-label="Enter Full Screen">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path class="fill" d="M3.4 8.6V4.9l3.7 3.7zM8.6 3.4v3.7L4.9 3.4z"/></svg>
+      </button>
+    </div>
+    <div class="title" data-tauri-drag-region>RustPlay</div>
+  </header>
+
+  <main>
+    <section class="page home" data-page="airplay">
+      <div class="tile" aria-hidden="true">
+        <img class="layer bg" src="assets/tile-bg.png" alt="" draggable="false">
+        <img class="layer airplay" src="assets/tile-airplay.png" alt="" draggable="false">
+        <img class="layer crab" src="assets/tile-crab.png" alt="" draggable="false">
+        <div class="sheen"></div>
+        <div class="glint"><i></i></div>
+        <div class="rim"></div>
+      </div>
+
+      <div class="name-row">
+        <button class="name-button" type="button" aria-label="Rename RustPlay" title="Rename">
+          <span class="name-text"><span>RustPlay</span></span>
+          <svg class="pencil" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.6 4.4l3 3L7.4 15.6l-3.6.6.6-3.6z"/><path d="M11 6l3 3"/></svg>
+        </button>
+        <input class="name-field" type="text" maxlength="40" spellcheck="false" autocomplete="off" aria-label="Receiver name">
+      </div>
+      <p class="name-hint" aria-live="polite">Shown on your iPhone under Screen Mirroring</p>
+
+      <p class="status" aria-live="polite">
+        <span class="indicator"><span class="dot"></span><span class="spinner"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></span>
+        <span class="status-text"><span>Ready for AirPlay</span></span>
+      </p>
+      <p class="address"></p>
+    </section>
+
+    <section class="page drop-page" data-page="drop" aria-label="Drop" inert>
+      <header class="drop-head">
+        <span class="drop-glyph" aria-hidden="true">
+          <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" class="ring r3"/><circle cx="20" cy="20" r="12.5" class="ring r2"/><path d="M20 11v13m-5-5l5 5 5-5"/><path d="M13 29h14"/></svg>
+        </span>
+        <div class="drop-titles">
+          <h2>Drop</h2>
+          <p>Share files with nearby iPhones and computers using LocalSend.</p>
+        </div>
+      </header>
+      <p class="drop-error" role="alert" hidden></p>
+
+      <div class="panels">
+        <section class="panel send-panel" aria-labelledby="send-title">
+          <h3 id="send-title">Send <button class="link" type="button" data-action="clear-outbox" hidden>Clear</button></h3>
+          <div class="dropzone" tabindex="0" role="button" aria-label="Choose files to send">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M9 4.5h9.5L24 10v16.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 8 26.5V6a1.5 1.5 0 0 1 1-1.5z"/><path d="M18 4.5V10h6"/><path d="M16 23v-8m-3.5 3.5L16 15l3.5 3.5"/></svg>
+            <b>Drop files here</b>
+            <span>or click to choose</span>
+          </div>
+          <ul class="file-list outbox-list"></ul>
+          <h3 class="nearby-title">Nearby <button class="link" type="button" data-action="scan">Refresh</button></h3>
+          <div class="nearby" role="list" aria-label="Nearby devices"></div>
+          <p class="nearby-empty">Open <b>LocalSend</b> on your iPhone to see it here.</p>
+        </section>
+
+        <section class="panel received-panel" aria-labelledby="received-title">
+          <h3 id="received-title">Received <button class="link" type="button" data-action="open-folder">Open Downloads</button></h3>
+          <ul class="file-list received-list"></ul>
+          <div class="empty">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="9" y="3.5" width="14" height="25" rx="3.5"/><path d="M14 6.5h4"/><path d="M16 12v8m-3.5-3.5L16 20l3.5-3.5"/></svg>
+            <span>On your iPhone, tap <b>Share</b>, choose <b>LocalSend</b>, then <b class="receiver-alias">RustPlay</b>. Files save to Downloads automatically.</span>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <nav class="sections" aria-label="Sections">
+      <button class="section-card" type="button" data-section="airplay" aria-pressed="true">
+        <svg viewBox="0 0 28 28" aria-hidden="true"><path d="M9 20.5H6.5a2.5 2.5 0 0 1-2.5-2.5V7.5A2.5 2.5 0 0 1 6.5 5h15A2.5 2.5 0 0 1 24 7.5V18a2.5 2.5 0 0 1-2.5 2.5H19"/><path class="fill" d="M14 16.5l5 6.5H9z"/></svg>
+        <span><b>AirPlay</b><small>Mirror your iPhone's screen</small></span>
+      </button>
+      <button class="section-card" type="button" data-section="drop" aria-pressed="false">
+        <svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="10"/><path d="M14 8.5v8.5m-3.5-3.5L14 17l3.5-3.5"/><path d="M10 20.5h8"/></svg>
+        <span><b>Drop</b><small>Send and receive files</small></span>
+      </button>
+    </nav>
+
+    <div class="drag-overlay" aria-hidden="true">
+      <div><svg viewBox="0 0 32 32"><path d="M16 22V8m-6 6l6-6 6 6"/><path d="M7 25h18"/></svg><b>Drop to send to your iPhone</b></div>
+    </div>
+
+    <div class="screen" aria-label="Mirrored screen">
+      <canvas></canvas>
+      <div class="cover" aria-hidden="true">
+        <img src="assets/tile-bg.png" alt=""><img src="assets/tile-airplay.png" alt=""><img src="assets/tile-crab.png" alt="">
+      </div>
+      <div class="veil">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="7" y="14" width="18" height="13" rx="3.5" class="fill"/>
+          <path d="M11 14v-3.5a5 5 0 0 1 10 0V14"/>
+        </svg>
+        <b>Screen Locked</b>
+        <span class="veil-detail">Unlock your iPhone to keep mirroring.</span>
+      </div>
+    </div>
+
+    <div class="hud" role="toolbar" aria-label="Mirroring controls">
+      <span class="hud-device">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5.5" y="2" width="9" height="16" rx="2.5"/><path d="M8.8 4.6h2.4"/></svg>
+        <span class="hud-name">iPhone</span>
+      </span>
+      <span class="hud-sep"></span>
+      <span class="volume" data-level="3">
+        <button class="hud-btn speaker" data-action="mute" aria-label="Mute" title="Mute">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path class="fill" d="M2.8 7.6h2.7l3.9-3.4v11.6l-3.9-3.4H2.8z"/>
+            <path class="wave w1" d="M12.1 8a2.9 2.9 0 0 1 0 4"/>
+            <path class="wave w2" d="M14.2 6.1a5.6 5.6 0 0 1 0 7.8"/>
+            <path class="wave w3" d="M16.3 4.2a8.3 8.3 0 0 1 0 11.6"/>
+            <path class="slash" d="M12 7.5l5 5m0-5l-5 5"/>
+          </svg>
+        </button>
+        <span class="slider" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80">
+          <span class="track"><span class="fill-bar"></span></span>
+          <span class="knob"></span>
+        </span>
+      </span>
+      <span class="hud-sep"></span>
+      <button class="hud-btn control-toggle" data-action="control" aria-pressed="false" aria-label="Control with Mouse and Keyboard" title="Control with Mouse &amp; Keyboard">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="1.5" y="6.5" width="11" height="7.5" rx="1.6"/><path d="M4 9.2h.01M6.5 9.2h.01M9 9.2h.01M4.5 11.6h4.5"/><rect x="14" y="5" width="4.5" height="9.5" rx="2.25"/><path d="M16.25 5v3.2"/></svg>
+      </button>
+      <button class="hud-btn" data-action="fullscreen" aria-label="Enter Full Screen" title="Full Screen (F)">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 8V3.5H8M12 3.5h4.5V8M16.5 12v4.5H12M8 16.5H3.5V12"/></svg>
+      </button>
+      <button class="hud-btn stop" data-action="stop" aria-label="Stop Mirroring">Stop</button>
+    </div>
+    <div class="control-hint" role="status" aria-live="polite"></div>
+
+    <div class="banner" role="status" aria-live="polite">
+      <span class="banner-thumb"></span>
+      <span class="banner-text"><b class="banner-title">Received</b><small class="banner-name"></small></span>
+      <button class="pill small banner-button" type="button" data-action="banner-show">Show</button>
+    </div>
+
+  </main>
+</body>
+</html>
