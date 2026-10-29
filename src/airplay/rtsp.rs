@@ -17,6 +17,7 @@ use super::{Receiver, audio, fairplay, mdns, mirror, timing};
 
 const MAX_BODY: usize = 1024 * 1024;
 const MAX_HEADERS: usize = 64;
+const MAX_LINE: usize = 8 * 1024;
 const PLIST: &str = "application/x-apple-binary-plist";
 const OCTETS: &str = "application/octet-stream";
 
@@ -485,11 +486,20 @@ fn abort(slot: &mut Option<JoinHandle<()>>) {
     }
 }
 
+/// Reads one line, refusing any longer than MAX_LINE so a client can't make it grow without end.
+async fn read_line<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R, line: &mut String) -> std::io::Result<usize> {
+    line.clear();
+    let read = (&mut *reader).take(MAX_LINE as u64).read_line(line).await?;
+    if read == MAX_LINE && !line.ends_with('\n') {
+        return Err(std::io::Error::other("request line too long"));
+    }
+    Ok(read)
+}
+
 async fn read_request<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R) -> std::io::Result<Option<Request>> {
     let mut line = String::new();
     loop {
-        line.clear();
-        if reader.read_line(&mut line).await? == 0 {
+        if read_line(reader, &mut line).await? == 0 {
             return Ok(None);
         }
         if !line.trim().is_empty() {
@@ -509,8 +519,7 @@ async fn read_request<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R) -> std
     };
 
     loop {
-        line.clear();
-        if reader.read_line(&mut line).await? == 0 {
+        if read_line(reader, &mut line).await? == 0 {
             return Ok(None);
         }
         let header = line.trim_end();
@@ -576,5 +585,15 @@ mod tests {
         );
         assert_eq!(stream_connection_id(&signed), 13715163233390616473);
         assert_eq!(stream_connection_id(&wide), 13715163233390616473);
+    }
+
+    #[tokio::test]
+    async fn refuses_endless_lines() {
+        let flood = vec![b'A'; MAX_LINE * 4];
+        assert!(read_request(&mut BufReader::new(flood.as_slice())).await.is_err());
+
+        let request = b"OPTIONS * RTSP/1.0\r\nCSeq: 1\r\n\r\n";
+        let parsed = read_request(&mut BufReader::new(&request[..])).await.unwrap().unwrap();
+        assert_eq!((parsed.method.as_str(), parsed.header("CSeq")), ("OPTIONS", Some("1")));
     }
 }

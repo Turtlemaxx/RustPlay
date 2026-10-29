@@ -364,7 +364,7 @@ impl FileDrop {
                     session.items.push(id);
                     session.from.clone()
                 };
-                let path = unique_path(&self.folder, &sanitize_path(&file.file_name, Rules::Windows));
+                let path = unique_path(&self.folder, &received_name(&file.file_name));
                 if let Err(err) = std::fs::create_dir_all(&self.folder) {
                     log::warn!("can't create {}: {err}", self.folder.display());
                 }
@@ -388,6 +388,7 @@ impl FileDrop {
                     match result_rx.await {
                         Ok(Ok(())) => {
                             log::info!("received {} from {from}", path.display());
+                            mark_from_internet(&path);
                             let item = Received {
                                 id,
                                 name,
@@ -486,7 +487,7 @@ impl FileDrop {
                 let path = self.received.lock().unwrap().iter().find(|r| r.id == id).map(|r| PathBuf::from(&r.path));
                 match path {
                     Some(path) => {
-                        reveal(&path, request["type"] == "drop-reveal");
+                        reveal(&path, request["type"] == "drop-reveal" || !opens_directly(&path));
                         json!({ "ok": true })
                     }
                     None => json!({ "ok": false, "error": "That file is gone." }),
@@ -738,6 +739,59 @@ fn is_previewable(path: &Path) -> bool {
     matches!(extension(path).as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp")
 }
 
+/// Received files open straight away only if they're media, PDFs or text; anything
+/// else (programs, scripts, shortcuts, disk images…) is shown in Explorer instead.
+fn opens_directly(path: &Path) -> bool {
+    matches!(
+        extension(path).as_str(),
+        "jpg"
+            | "jpeg"
+            | "png"
+            | "gif"
+            | "webp"
+            | "heic"
+            | "heif"
+            | "bmp"
+            | "tif"
+            | "tiff"
+            | "mp4"
+            | "mov"
+            | "m4v"
+            | "mkv"
+            | "webm"
+            | "avi"
+            | "mp3"
+            | "m4a"
+            | "aac"
+            | "wav"
+            | "flac"
+            | "pdf"
+            | "txt"
+    )
+}
+
+/// A sender's file name made safe for Downloads: no folders or reserved names, and
+/// no invisible direction marks that could make "photo\u{202E}gpj.exe" look like a JPEG.
+fn received_name(name: &str) -> String {
+    let visible: String = name
+        .chars()
+        .filter(
+            |c| !matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'),
+        )
+        .collect();
+    sanitize_path(&visible, Rules::Windows)
+}
+
+/// Tags a received file as coming from the internet (Mark of the Web), so Windows
+/// warns before running it and Office opens it in Protected View.
+fn mark_from_internet(path: &Path) {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    if let Err(err) = std::fs::write(stream, "[ZoneTransfer]\r\nZoneId=3\r\n") {
+        log::warn!("couldn't mark {} as downloaded: {err}", path.display());
+    }
+}
+
 /// "photo.jpg", then "photo (2).jpg", "photo (3).jpg", …
 fn unique_path(folder: &Path, name: &str) -> PathBuf {
     let candidate = folder.join(name);
@@ -790,5 +844,24 @@ mod tests {
         assert_eq!(sanitize_path("../../evil/boot.ini", Rules::Windows), "boot.ini");
         assert_eq!(sanitize_path("Photos\\IMG_1.HEIC", Rules::Windows), "IMG_1.HEIC");
         assert!(!sanitize_path("CON", Rules::Windows).eq_ignore_ascii_case("con"));
+    }
+
+    #[test]
+    fn received_names_lose_direction_marks() {
+        assert_eq!(received_name("photo\u{202E}gpj.exe"), "photogpj.exe");
+        assert_eq!(received_name("..\\\u{2067}evil\u{2069}.txt"), "evil.txt");
+        assert!(!opens_directly(Path::new("photogpj.exe")));
+        assert!(opens_directly(Path::new("IMG_1.HEIC")));
+    }
+
+    #[test]
+    fn received_files_are_marked_as_downloaded() {
+        let file = std::env::temp_dir().join(format!("rustplay-motw-{}.txt", std::process::id()));
+        std::fs::write(&file, b"x").unwrap();
+        mark_from_internet(&file);
+        let mut stream = file.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        assert!(std::fs::read_to_string(stream).unwrap().contains("ZoneId=3"));
+        std::fs::remove_file(&file).unwrap();
     }
 }
