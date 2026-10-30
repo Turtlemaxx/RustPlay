@@ -170,7 +170,7 @@ tilt.springs = [tilt.px, tilt.py, tilt.lift, tilt.press];
 
 let hovering = false;
 addEventListener("pointermove", (event) => {
-  if (phase === "live" || section !== "airplay") return;
+  if (phase === "live" || section !== "airplay" || body.classList.contains("settings-open")) return;
   const r = tile.getBoundingClientRect();
   const cx = r.left + r.width / 2;
   const cy = r.top + r.height / 2;
@@ -398,6 +398,7 @@ function applyStatus(status) {
     resetDecoder();
     setPhase("idle");
   } else if (phase === "idle") {
+    showSettings(false);
     // Stay on "Connecting" until a frame is actually on screen.
     swapText($(".status-text"), `Connecting to ${deviceName ?? "iPhone"}`);
     // The screen zooms out of the AirPlay icon, so bring that page forward.
@@ -554,12 +555,20 @@ function selectSection(next) {
   for (const card of document.querySelectorAll(".section-card")) {
     card.setAttribute("aria-pressed", String(card.dataset.section === next));
   }
-  $(".home").inert = next !== "airplay";
-  $(".drop-page").inert = next !== "drop";
+  syncInert();
   if (next !== "airplay") restTile();
   try {
     localStorage.setItem("section", next);
   } catch {}
+}
+
+/** Only what's in front can take focus and clicks. */
+function syncInert() {
+  const settingsOpen = body.classList.contains("settings-open");
+  $(".home").inert = settingsOpen || section !== "airplay";
+  $(".drop-page").inert = settingsOpen || section !== "drop";
+  $(".sections").inert = settingsOpen;
+  $(".settings").inert = !settingsOpen;
 }
 for (const card of document.querySelectorAll(".section-card")) {
   card.addEventListener("click", () => selectSection(card.dataset.section));
@@ -567,6 +576,149 @@ for (const card of document.querySelectorAll(".section-card")) {
 
 function setAliasNames(name) {
   for (const el of document.querySelectorAll(".receiver-alias")) el.textContent = name;
+}
+
+/* ── Settings ────────────────────────────────────────── */
+
+const settingsSearch = $(".set-search input");
+const settingsNav = [...document.querySelectorAll(".set-nav-item")];
+const appearanceRadios = [...document.querySelectorAll('input[name="appearance"]')];
+const requireCode = $(".require-code");
+const settingsError = $(".set-error");
+
+function showSettings(open) {
+  if (open === body.classList.contains("settings-open")) return;
+  if (open && phase === "live") return;
+  body.classList.toggle("settings-open", open);
+  syncInert();
+  if (open) {
+    restTile();
+    $(".set-nav-item[aria-current]")?.focus({ preventScroll: true });
+  } else {
+    settingsSearch.value = "";
+    filterSettings();
+    $(".settings-button").focus({ preventScroll: true });
+  }
+}
+
+function selectPane(name) {
+  for (const item of settingsNav) {
+    if (item.dataset.pane === name) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  }
+  for (const pane of document.querySelectorAll(".set-pane")) pane.hidden = pane.dataset.pane !== name;
+  $(".set-title").textContent = settingsNav.find((item) => item.dataset.pane === name).getAttribute("aria-label");
+  try {
+    localStorage.setItem("settings-pane", name);
+  } catch {}
+}
+for (const item of settingsNav) item.addEventListener("click", () => selectPane(item.dataset.pane));
+
+function filterSettings() {
+  const words = settingsSearch.value.trim().toLowerCase().split(/\s+/);
+  let found = 0;
+  for (const item of settingsNav) {
+    item.hidden = !words.every((word) => item.dataset.keywords.split(" ").some((key) => key.startsWith(word)));
+    if (!item.hidden) found++;
+  }
+  $(".set-no-results").hidden = found > 0;
+}
+settingsSearch.addEventListener("input", filterSettings);
+settingsSearch.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const first = settingsNav.find((item) => !item.hidden);
+  if (first) selectPane(first.dataset.pane);
+});
+
+function applyAppearance(value, animate = false) {
+  const root = document.documentElement;
+  const change = () => {
+    if (value === "auto") delete root.dataset.theme;
+    else root.dataset.theme = value;
+  };
+  for (const radio of appearanceRadios) radio.checked = radio.value === value;
+  // The whole window cross-fades, as when macOS changes appearance.
+  if (animate && document.startViewTransition && !reducedMotion.matches) document.startViewTransition(change);
+  else change();
+}
+let savedAppearance = "auto";
+for (const radio of appearanceRadios) {
+  radio.addEventListener("change", () => {
+    applyAppearance(radio.value, true);
+    request("set-appearance", { appearance: radio.value })
+      .then(() => (savedAppearance = radio.value))
+      .catch(() => applyAppearance(savedAppearance, true));
+  });
+}
+
+requireCode.addEventListener("change", () => {
+  const on = requireCode.checked;
+  settingsError.hidden = true;
+  request("set-require-code", { on }).catch((error) => {
+    requireCode.checked = !on;
+    settingsError.textContent = String(error);
+    settingsError.hidden = false;
+  });
+});
+
+async function loadSettings() {
+  const settings = await request("settings");
+  savedAppearance = settings.appearance;
+  applyAppearance(settings.appearance);
+  requireCode.checked = settings.requireCode;
+}
+
+/* ── Connection code ─────────────────────────────────── */
+
+let codeTimer = 0;
+let focusBeforeCode = null;
+
+function setCodeOpen(open) {
+  if (open === body.classList.contains("code-open")) return;
+  body.classList.toggle("code-open", open);
+  $(".code-sheet").inert = !open;
+  if (open) {
+    releaseCapture();
+    focusBeforeCode = document.activeElement;
+    $('.code-sheet [data-action="code-cancel"]').focus({ preventScroll: true });
+    // The code is only useful if it's seen, so bring the window back into view.
+    if (appWindow) {
+      appWindow.unminimize().catch(() => {});
+      if (!document.hasFocus()) appWindow.requestUserAttention(2).catch(() => {});
+    }
+  } else {
+    focusBeforeCode?.focus?.({ preventScroll: true });
+    focusBeforeCode = null;
+  }
+}
+
+function applyCode(event) {
+  clearTimeout(codeTimer);
+  const digits = $(".code-digits");
+  const detail = $("#code-detail");
+  if (event.wait) {
+    digits.hidden = true;
+    detail.classList.add("wrong");
+    detail.textContent = `Too many wrong codes. Try again in ${event.wait} seconds.`;
+    setCodeOpen(true);
+    codeTimer = setTimeout(() => setCodeOpen(false), event.wait * 1000);
+    return;
+  }
+  if (!event.code) {
+    setCodeOpen(false);
+    return;
+  }
+  const device = event.device || "your device";
+  digits.hidden = false;
+  [...event.code].forEach((digit, i) => (digits.children[i].textContent = digit));
+  digits.setAttribute("aria-label", `Code ${[...event.code].join(" ")}`);
+  detail.classList.toggle("wrong", Boolean(event.wrong));
+  detail.textContent = event.wrong
+    ? "That code wasn't right. Try again."
+    : `Type this on ${device} when it asks for the AirPlay password.`;
+  if (event.wrong) shake(digits);
+  setCodeOpen(true);
+  codeTimer = setTimeout(() => setCodeOpen(false), (event.expires ?? 120) * 1000);
 }
 
 /* ── Drop ────────────────────────────────────────────── */
@@ -1239,6 +1391,7 @@ async function connect() {
     socket.onopen = () => {
       retry = 500;
       loadDrop().catch((error) => console.warn("drop info", error));
+      loadSettings().catch((error) => console.warn("settings", error));
       request("remote-status").then(applyRemote).catch(() => {});
     };
     socket.onmessage = ({ data }) => {
@@ -1247,6 +1400,7 @@ async function connect() {
         if (message.type === "status") applyStatus(message);
         if (message.type === "drop") onDropEvent(message);
         if (message.type === "remote") applyRemote(message);
+        if (message.type === "code") applyCode(message);
         if (message.type === "reply") {
           const waiter = pending.get(message.id);
           pending.delete(message.id);
@@ -1316,6 +1470,13 @@ const actions = {
   stop: () => request("stop").catch(() => {}),
   mute: () => toggleMute(),
   control: () => setControl(!control.on),
+  settings: () => showSettings(true),
+  "settings-close": () => showSettings(false),
+  "code-cancel": () => {
+    clearTimeout(codeTimer);
+    setCodeOpen(false);
+    request("code-cancel").catch(() => {});
+  },
   "open-folder": () => request("drop-open-folder").catch(() => {}),
   scan: () => {
     request("drop-scan").catch(() => {});
@@ -1342,6 +1503,18 @@ document.addEventListener("click", (event) => {
 // Double-clicks belong to the iPad while mouse control is on.
 screenEl.addEventListener("dblclick", () => !control.on && toggleFullscreen());
 addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && body.classList.contains("code-open")) return actions["code-cancel"]();
+  if (event.key === "," && event.ctrlKey) return showSettings(!body.classList.contains("settings-open"));
+  if (event.key === "Escape" && body.classList.contains("settings-open")) {
+    // Esc clears the search first, like the search field in System Settings.
+    if (settingsSearch.value) {
+      settingsSearch.value = "";
+      filterSettings();
+    } else {
+      showSettings(false);
+    }
+    return;
+  }
   if (event.key === "Escape" && body.classList.contains("fullscreen")) toggleFullscreen(false);
   if (phase !== "live" || event.ctrlKey || event.metaKey) return;
   if (event.key === "f" || event.key === "F") toggleFullscreen();
@@ -1358,6 +1531,8 @@ addEventListener("focus", () => body.classList.remove("inactive"));
 tilt.render();
 try {
   if (localStorage.getItem("section") === "drop") selectSection("drop");
+  const pane = localStorage.getItem("settings-pane");
+  if (settingsNav.some((item) => item.dataset.pane === pane)) selectPane(pane);
 } catch {}
 setAliasNames(receiverName);
 introduce();

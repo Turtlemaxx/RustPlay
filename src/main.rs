@@ -12,6 +12,7 @@ use std::sync::Arc;
 use airplay::audio::Output;
 use airplay::hub::Hub;
 use serde_json::{Value, json};
+use settings::Appearance;
 use tauri::Manager;
 
 struct App {
@@ -21,6 +22,7 @@ struct App {
     files: Arc<drop::FileDrop>,
     remote: Arc<remote::Remote>,
     settings: settings::Store,
+    window: Option<tauri::WebviewWindow>,
     /// False for a second copy of the app (RUSTPLAY_NAME), which keeps the name it was given.
     persist_name: bool,
 }
@@ -48,6 +50,34 @@ impl App {
                 self.hub.stop_mirroring();
                 json!({ "ok": true })
             }
+            Some("settings") => {
+                let settings = self.settings.get();
+                json!({ "ok": true, "appearance": settings.appearance, "requireCode": settings.require_code })
+            }
+            Some("set-appearance") => match serde_json::from_value(request["appearance"].clone()) {
+                Ok(appearance) => {
+                    self.settings.update(|s| s.appearance = appearance);
+                    if let Some(window) = &self.window {
+                        apply_appearance(window, appearance);
+                    }
+                    json!({ "ok": true })
+                }
+                Err(_) => json!({ "ok": false, "error": "unknown appearance" }),
+            },
+            Some("set-require-code") => {
+                let required = request["on"].as_bool().unwrap_or(false);
+                match self.receiver.require_code(required) {
+                    Ok(()) => {
+                        self.settings.update(|s| s.require_code = required);
+                        json!({ "ok": true })
+                    }
+                    Err(err) => json!({ "ok": false, "error": format!("Couldn't change this: {err}") }),
+                }
+            }
+            Some("code-cancel") => {
+                self.receiver.cancel_code();
+                json!({ "ok": true })
+            }
             _ => json!({ "ok": false, "error": "unknown command" }),
         }
     }
@@ -73,6 +103,23 @@ struct Endpoint(String);
 #[tauri::command]
 fn stream_endpoint(endpoint: tauri::State<'_, Endpoint>) -> String {
     endpoint.0.clone()
+}
+
+/// The window's theme decides the page's first paint (through prefers-color-scheme),
+/// so a chosen appearance shows from the first frame, and the window's own
+/// background keeps resizes and page loads from flashing the other color.
+fn apply_appearance(window: &tauri::WebviewWindow, appearance: Appearance) {
+    let theme = match appearance {
+        Appearance::Auto => None,
+        Appearance::Light => Some(tauri::Theme::Light),
+        Appearance::Dark => Some(tauri::Theme::Dark),
+    };
+    let _ = window.set_theme(theme);
+    let color = match window.theme() {
+        Ok(tauri::Theme::Light) => tauri::window::Color(0xf5, 0xf5, 0xf7, 0xff),
+        _ => tauri::window::Color(0x1e, 0x1e, 0x1e, 0xff),
+    };
+    let _ = window.set_background_color(Some(color));
 }
 
 /// Release builds have no console, so they log to a file beside the settings.
@@ -124,6 +171,7 @@ fn main() {
                 address,
                 hub.clone(),
                 output.clone(),
+                saved.require_code,
             ))?;
 
             // Received files go straight to Downloads.
@@ -136,8 +184,22 @@ fn main() {
             let remote = remote::Remote::start(hub.clone());
             app.manage(remote.clone());
 
+            let window = app.get_webview_window("main");
+            if let Some(window) = &window {
+                apply_appearance(window, saved.appearance);
+            }
+
             let persist_name = second_copy.is_none();
-            let state = Arc::new(App { hub: hub.clone(), output, receiver, files, remote, settings, persist_name });
+            let state = Arc::new(App {
+                hub: hub.clone(),
+                output,
+                receiver,
+                files,
+                remote,
+                settings,
+                window: window.clone(),
+                persist_name,
+            });
             let commands: ui_socket::Commands = Arc::new(move |request| state.command(request));
             let endpoint = tauri::async_runtime::block_on(ui_socket::start(hub, commands))?;
             app.manage(Endpoint(endpoint));
@@ -145,7 +207,7 @@ fn main() {
             // The window starts hidden (tauri.conf.json); RUSTPLAY_HIDE keeps it that
             // way, for running the backend in automated tests.
             if std::env::var_os("RUSTPLAY_HIDE").is_none() {
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = window {
                     window.show()?;
                 }
             }

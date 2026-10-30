@@ -12,15 +12,20 @@ pub const SOURCE_VERSION: &str = "220.68";
 pub const FEATURES: u64 = 0x5A7F_FEE6;
 pub const PI: &str = "2e388006-13ba-4041-9a67-25dd4a43d536";
 
-fn features() -> String {
-    format!("0x{FEATURES:X},0x0")
+/// Asking for a password goes together with turning off legacy pairing (bit 27).
+pub fn features(code_required: bool) -> u64 {
+    if code_required { FEATURES & !(1 << 27) } else { FEATURES }
 }
 
-pub fn airplay_txt(receiver: &Receiver) -> Vec<(&'static str, String)> {
+fn features_txt(code_required: bool) -> String {
+    format!("0x{:X},0x0", features(code_required))
+}
+
+pub fn airplay_txt(receiver: &Receiver, code_required: bool) -> Vec<(&'static str, String)> {
     vec![
         ("deviceid", receiver.device_id_string()),
-        ("features", features()),
-        ("pw", "false".into()),
+        ("features", features_txt(code_required)),
+        ("pw", code_required.to_string()),
         ("flags", "0x4".into()),
         ("model", MODEL.into()),
         ("pk", hex::encode(receiver.public_key)),
@@ -30,24 +35,24 @@ pub fn airplay_txt(receiver: &Receiver) -> Vec<(&'static str, String)> {
     ]
 }
 
-fn raop_txt(receiver: &Receiver) -> Vec<(&'static str, String)> {
+fn raop_txt(receiver: &Receiver, code_required: bool) -> Vec<(&'static str, String)> {
     vec![
         ("ch", "2".into()),
         ("cn", "0,1,2,3".into()),
         ("da", "true".into()),
         ("et", "0,3,5".into()),
         ("vv", "2".into()),
-        ("ft", features()),
+        ("ft", features_txt(code_required)),
         ("am", MODEL.into()),
         ("md", "0,1,2".into()),
         ("rhd", "5.6.0.0".into()),
-        ("pw", "false".into()),
+        ("pw", code_required.to_string()),
         ("sr", "44100".into()),
         ("ss", "16".into()),
         ("sv", "false".into()),
         ("tp", "UDP".into()),
         ("txtvers", "1".into()),
-        ("sf", "0x4".into()),
+        ("sf", if code_required { "0x84" } else { "0x4" }.into()),
         ("vs", SOURCE_VERSION.into()),
         ("vn", "65537".into()),
         ("pk", hex::encode(receiver.public_key)),
@@ -79,13 +84,14 @@ pub fn register(
     name: &str,
     address: Option<IpAddr>,
     port: u16,
+    code_required: bool,
 ) -> anyhow::Result<Vec<String>> {
     let host = format!("{}.local.", receiver.host_label());
     let raop_name = format!("{}@{name}", hex::encode_upper(receiver.device_id));
     let mut registered = Vec::new();
     for (service, instance, txt) in [
-        ("_airplay._tcp.local.", name.to_string(), airplay_txt(receiver)),
-        ("_raop._tcp.local.", raop_name, raop_txt(receiver)),
+        ("_airplay._tcp.local.", name.to_string(), airplay_txt(receiver, code_required)),
+        ("_raop._tcp.local.", raop_name, raop_txt(receiver, code_required)),
     ] {
         let props: Vec<(&str, &str)> = txt.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let info = match address {

@@ -1,4 +1,5 @@
-//! User settings (receiver name, volume), kept as JSON in the app's config folder.
+//! User settings (receiver name, volume, appearance, connection code), kept as
+//! JSON in the app's config folder.
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -7,16 +8,28 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_NAME: &str = "RustPlay";
 
+#[derive(Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    /// Follows Windows.
+    #[default]
+    Auto,
+    Light,
+    Dark,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub name: String,
     pub volume: f32,
+    pub appearance: Appearance,
+    pub require_code: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { name: DEFAULT_NAME.into(), volume: 0.8 }
+        Settings { name: DEFAULT_NAME.into(), volume: 0.8, appearance: Appearance::default(), require_code: false }
     }
 }
 
@@ -69,6 +82,14 @@ pub fn clean_name(input: &str) -> Result<String, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn older_settings_files_still_load() {
+        let settings: Settings = serde_json::from_str(r#"{"name":"Den","volume":0.5}"#).unwrap();
+        assert_eq!(settings.name, "Den");
+        assert!(settings.appearance == Appearance::Auto);
+        assert!(!settings.require_code);
+    }
 
     #[test]
     fn cleans_receiver_names() {

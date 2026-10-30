@@ -9,6 +9,12 @@ then on your iPhone or iPad: Control Center → Screen Mirroring → **RustPlay*
   scroll wheel over the bar, ↑/↓, or M to mute. The iPhone's own volume buttons work
   too.
 - **Full screen:** double-click the screen or press F.
+- **Settings:** click Settings at the top left, or press Ctrl+,.
+  - **Appearance:** Auto (follows Windows), Light or Dark.
+  - **Require Code:** when this is checked, each new connection needs a 4-digit code.
+    RustPlay shows a new code on screen, and you type it on the iPhone or iPad when it
+    asks for the AirPlay password. After three wrong tries RustPlay pauses briefly, and
+    the next try gets a new code.
 - **Drop (send and receive files):** pick it in the boxes at the bottom. RustPlay is a
   full [LocalSend](https://localsend.org) device, so it works with the free LocalSend
   app on iPhone (and on Android, Mac and Linux). Real AirDrop can't reach a Windows PC:
@@ -42,7 +48,7 @@ Both devices must be on the same network. If a firewall like Portmaster or a VPN
 Mullvad is running, allow incoming LAN connections for `rustplay.exe` there too. Drop
 uses LocalSend's port 53317, so don't run the LocalSend desktop app at the same time.
 
-Settings (name, volume) are stored in `%APPDATA%\app.rustplay.receiver\settings.json`,
+Settings (name, volume, appearance, connection code) are stored in `%APPDATA%\app.rustplay.receiver\settings.json`,
 next to `localsend.pem`, the certificate other LocalSend devices know this PC by, and
 `rustplay.log`, the log of the last run. To install it somewhere else, copy just
 `target\release\rustplay.exe`; the interface is built into it. Only one copy runs at a
@@ -56,6 +62,8 @@ pose as a Bluetooth mouse and knock each other's iPad off.
 - `src/airplay/rtsp.rs` handles the control connection on port 7000: `/info`, pairing,
   FairPlay, `SETUP`, volume and `TEARDOWN`.
 - `src/airplay/pairing.rs` is legacy pairing (Ed25519 + X25519, AES-CTR).
+- `src/airplay/code.rs` is the optional connection code: RFC 2617 digest authentication
+  on the first `SETUP`, with a one-time code and limited guesses, like UxPlay's `-pw`.
 - `src/airplay/fairplay.rs` runs the FairPlay handshake. The vendored C code in
   `vendor/playfair` decrypts the session key.
 - `src/airplay/mirror.rs` decrypts the H.264 stream (AES-128-CTR) and survives the iPhone
