@@ -59,6 +59,11 @@ impl Running {
     /// Turns the connection code on or off; iPhones learn of it from the new advertisement.
     pub fn require_code(&self, required: bool) -> anyhow::Result<()> {
         self.ctx.code.set_required(required);
+        // Connections made without a code shouldn't keep their access. Settings can't
+        // be opened while mirroring, so this doesn't cut off a screen in use.
+        if required {
+            self.ctx.hub.end_all_connections();
+        }
         self.advertise()?;
         log::info!("connection code {}", if required { "on" } else { "off" });
         Ok(())

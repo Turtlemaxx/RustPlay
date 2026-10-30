@@ -12,7 +12,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
 use super::code::CodeGate;
-use super::hub::Hub;
+use super::hub::{Hub, Kick};
 use super::pairing::{self, Identity, Verify};
 use super::{Receiver, audio, fairplay, mdns, mirror, timing};
 
@@ -153,7 +153,11 @@ impl Connection {
         loop {
             let request = tokio::select! {
                 request = read_request(&mut reader) => request?,
-                _ = kicked.recv() => {
+                kick = kicked.recv() => {
+                    if matches!(kick, Ok(Kick::Everyone)) {
+                        log::info!("closing a connection made before the code was required");
+                        return Ok(());
+                    }
                     if self.mirror.is_some() {
                         log::info!("stopping mirroring at the user's request");
                         return Ok(());
@@ -339,7 +343,9 @@ impl Connection {
             // A connection that already has its keys stays admitted.
             if self.aeskey.is_none() {
                 let name = body.get("name").and_then(Value::as_string).unwrap_or(&self.device);
-                if let Err(challenge) = self.ctx.code.admit(&req.method, req.header("Authorization"), name) {
+                if let Err(challenge) =
+                    self.ctx.code.admit(&req.method, self.peer.ip(), req.header("Authorization"), name)
+                {
                     let mut response = Response::error(401, "Unauthorized");
                     response.headers.push(("WWW-Authenticate", challenge));
                     return response;
@@ -457,8 +463,11 @@ impl Connection {
         response.headers.push(("Connection", "close".into()));
 
         if types.contains(&96) {
-            abort(&mut self.audio);
-            self.ctx.output.flush();
+            // The output is shared, so only a connection that's playing may flush it.
+            if self.audio.is_some() {
+                abort(&mut self.audio);
+                self.ctx.output.flush();
+            }
         } else if types.contains(&110) {
             abort(&mut self.mirror);
             self.ctx.hub.end(self.session);
