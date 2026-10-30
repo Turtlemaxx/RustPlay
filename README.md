@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Turtlemaxx/RustPlay/releases/latest"><b>⬇ Download for Windows</b></a>
+  <a href="https://github.com/Turtlemaxx/RustPlay/releases/latest"><b>Download for Windows</b></a>
   &nbsp;·&nbsp;
   <a href="#get-started">Get started</a>
   &nbsp;·&nbsp;
@@ -34,11 +34,11 @@
 
 | Feature | What you get |
 | --- | --- |
-| 📱 **Screen mirroring** | Shows your iPhone or iPad on your PC, with sound and a volume slider. |
-| 🔒 **Connection code** | Optionally asks for a new 4-digit code each time a device connects. |
-| 📁 **File sharing** | Sends and receives files through the free LocalSend app. |
-| 🖱️ **Mouse and keyboard** | Controls your iPad with your PC's mouse and keyboard over Bluetooth (experimental). |
-| 🌗 **Light and dark mode** | Follows Windows, or stays the way you choose. |
+| **Screen mirroring** | Shows your iPhone or iPad on your PC, with sound and a volume slider. |
+| **Connection code** | Optionally asks for a new 4-digit code each time a device connects. |
+| **File sharing** | Sends and receives files through the free LocalSend app. |
+| **Mouse and keyboard** | Controls your iPad with your PC's mouse and keyboard over Bluetooth (experimental). |
+| **Light and dark mode** | Follows Windows, or stays the way you choose. |
 
 Everything stays on your own network. RustPlay has no account, and nothing goes through the cloud.
 
