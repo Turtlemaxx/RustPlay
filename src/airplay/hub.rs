@@ -11,6 +11,15 @@ use tokio::sync::broadcast;
 const TAG_CODEC: u8 = 1;
 const TAG_FRAME: u8 = 2;
 
+/// What the connections are told to stop.
+#[derive(Clone, Copy)]
+pub enum Kick {
+    /// The user pressed Stop: whichever connection is mirroring ends.
+    Mirroring,
+    /// Every connection ends, whatever it's doing.
+    Everyone,
+}
+
 #[derive(Clone)]
 pub enum UiMessage {
     Text(String),
@@ -45,7 +54,7 @@ struct Inner {
 
 pub struct Hub {
     tx: broadcast::Sender<UiMessage>,
-    kick: broadcast::Sender<()>,
+    kick: broadcast::Sender<Kick>,
     inner: Mutex<Inner>,
 }
 
@@ -74,13 +83,17 @@ impl Hub {
         (initial, self.tx.subscribe())
     }
 
-    /// Signal that fires when the user asks to stop mirroring.
-    pub fn kicked(&self) -> broadcast::Receiver<()> {
+    /// Signal that tells connections to stop.
+    pub fn kicked(&self) -> broadcast::Receiver<Kick> {
         self.kick.subscribe()
     }
 
     pub fn stop_mirroring(&self) {
-        let _ = self.kick.send(());
+        let _ = self.kick.send(Kick::Mirroring);
+    }
+
+    pub fn end_all_connections(&self) {
+        let _ = self.kick.send(Kick::Everyone);
     }
 
     pub fn set_receiver(&self, name: String) {
