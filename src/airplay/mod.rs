@@ -1,6 +1,7 @@
 //! AirPlay screen-mirroring receiver (legacy AirPlay protocol, as UxPlay speaks it).
 
 pub mod audio;
+mod code;
 mod fairplay;
 mod fairplay_tables;
 pub mod hub;
@@ -49,13 +50,33 @@ pub struct Running {
 impl Running {
     /// Re-advertises under a new name; the iPhone's list picks it up within seconds.
     pub fn rename(&self, name: &str) -> anyhow::Result<()> {
+        *self.ctx.name.write().unwrap() = name.to_string();
+        self.advertise()?;
+        log::info!("now advertising as \"{name}\"");
+        Ok(())
+    }
+
+    /// Turns the connection code on or off; iPhones learn of it from the new advertisement.
+    pub fn require_code(&self, required: bool) -> anyhow::Result<()> {
+        self.ctx.code.set_required(required);
+        self.advertise()?;
+        log::info!("connection code {}", if required { "on" } else { "off" });
+        Ok(())
+    }
+
+    /// The code on screen was dismissed.
+    pub fn cancel_code(&self) {
+        self.ctx.code.cancel();
+    }
+
+    fn advertise(&self) -> anyhow::Result<()> {
         let mut services = self.services.lock().unwrap();
         for service in services.drain(..) {
             let _ = self.mdns.unregister(&service);
         }
-        *self.ctx.name.write().unwrap() = name.to_string();
-        *services = mdns::register(&self.mdns, &self.ctx.receiver, name, self.address, self.port)?;
-        log::info!("now advertising as \"{name}\"");
+        let name = self.ctx.name.read().unwrap().clone();
+        let required = self.ctx.code.required();
+        *services = mdns::register(&self.mdns, &self.ctx.receiver, &name, self.address, self.port, required)?;
         Ok(())
     }
 }
@@ -86,6 +107,7 @@ pub async fn start(
     address: Option<Ipv4Addr>,
     hub: Arc<Hub>,
     output: Arc<audio::Output>,
+    require_code: bool,
 ) -> anyhow::Result<Running> {
     let hostname = computer_name();
     // A stable, locally administered MAC-style ID so the iPhone recognizes us across launches.
@@ -100,10 +122,11 @@ pub async fn start(
     let port = listener.local_addr()?.port();
     let address = address.map(IpAddr::V4);
     let mdns = mdns::daemon()?;
-    let services = mdns::register(&mdns, &receiver, &name, address, port)?;
+    let services = mdns::register(&mdns, &receiver, &name, address, port, require_code)?;
     log::info!("advertising \"{name}\" on port {port}");
 
-    let ctx = Arc::new(rtsp::Context { identity, receiver, name: RwLock::new(name), hub, output });
+    let code = code::CodeGate::new(hub.clone(), require_code);
+    let ctx = Arc::new(rtsp::Context { identity, receiver, name: RwLock::new(name), hub, output, code });
     tokio::spawn(rtsp::serve(listener, ctx.clone()));
     Ok(Running { mdns, ctx, address, port, services: Mutex::new(services) })
 }

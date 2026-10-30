@@ -11,6 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
+use super::code::CodeGate;
 use super::hub::Hub;
 use super::pairing::{self, Identity, Verify};
 use super::{Receiver, audio, fairplay, mdns, mirror, timing};
@@ -34,6 +35,7 @@ pub struct Context {
     pub name: std::sync::RwLock<String>,
     pub hub: Arc<Hub>,
     pub output: Arc<audio::Output>,
+    pub code: CodeGate,
 }
 
 pub async fn serve(listener: TcpListener, ctx: Arc<Context>) {
@@ -185,6 +187,10 @@ impl Connection {
                 response
             }
             ("SETUP", _) => self.setup(req).await,
+            // These act on the shared audio output, so they wait for the connection code.
+            ("SET_PARAMETER" | "FLUSH", _) if self.aeskey.is_none() && self.ctx.code.required() => {
+                Response::error(401, "Unauthorized")
+            }
             ("GET_PARAMETER", _) => {
                 if req.body.starts_with(b"volume") {
                     Response::with_body("text/parameters", b"volume: 0.000000\r\n".to_vec())
@@ -220,7 +226,8 @@ impl Connection {
 
     fn info(&self, req: &Request) -> Response {
         let receiver = &self.ctx.receiver;
-        let airplay_txt = mdns::txt_wire(&mdns::airplay_txt(receiver));
+        let code_required = self.ctx.code.required();
+        let airplay_txt = mdns::txt_wire(&mdns::airplay_txt(receiver, code_required));
 
         // The first /info carries a plist asking only for the AirPlay TXT record.
         if req.header("Content-Type").is_some_and(|t| t.contains(PLIST)) {
@@ -233,7 +240,7 @@ impl Connection {
         dict.insert("deviceID".into(), receiver.device_id_string().into());
         dict.insert("macAddress".into(), receiver.device_id_string().into());
         dict.insert("pk".into(), Value::Data(receiver.public_key.to_vec()));
-        dict.insert("features".into(), mdns::FEATURES.into());
+        dict.insert("features".into(), mdns::features(code_required).into());
         dict.insert("name".into(), self.ctx.name.read().unwrap().clone().into());
         dict.insert("pi".into(), mdns::PI.into());
         dict.insert("vv".into(), 2u64.into());
@@ -329,6 +336,16 @@ impl Connection {
 
         // First SETUP: session keys and timing.
         if let (Some(ekey), Some(eiv)) = (data(&body, "ekey"), data(&body, "eiv")) {
+            // A connection that already has its keys stays admitted.
+            if self.aeskey.is_none() {
+                let name = body.get("name").and_then(Value::as_string).unwrap_or(&self.device);
+                if let Err(challenge) = self.ctx.code.admit(&req.method, req.header("Authorization"), name) {
+                    let mut response = Response::error(401, "Unauthorized");
+                    response.headers.push(("WWW-Authenticate", challenge));
+                    return response;
+                }
+            }
+
             let (Ok(ekey), Ok(eiv), Some(keymsg)) =
                 (<[u8; 72]>::try_from(ekey), <[u8; 16]>::try_from(eiv), self.fairplay_keymsg.as_ref())
             else {
