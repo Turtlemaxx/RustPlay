@@ -263,6 +263,12 @@ const geo = {
     screenEl.style.width = `${Math.max(1, this.w.value).toFixed(2)}px`;
     screenEl.style.height = `${Math.max(1, this.h.value).toFixed(2)}px`;
     screenEl.style.borderRadius = `${Math.max(0, this.r.value).toFixed(2)}px`;
+    // Where the phone sits, so the controls drawn over it can follow it (style.css, framed).
+    const root = document.documentElement.style;
+    root.setProperty("--screen-x", `${this.x.value.toFixed(2)}px`);
+    root.setProperty("--screen-y", `${this.y.value.toFixed(2)}px`);
+    root.setProperty("--screen-w", `${Math.max(1, this.w.value).toFixed(2)}px`);
+    root.setProperty("--screen-h", `${Math.max(1, this.h.value).toFixed(2)}px`);
     // The icon art fades out over the first part of the zoom (and back in at the end of a close).
     const progress = (this.w.value - this.iconSize) / Math.max(1, this.fullSize - this.iconSize);
     cover.style.opacity = (1 - smoothstep(0.04, 0.4, progress)).toFixed(3);
@@ -293,20 +299,67 @@ function iconRect() {
 
 function screenRect() {
   const fullscreen = body.classList.contains("fullscreen");
-  const pad = fullscreen ? 0 : 24;
-  const top = fullscreen ? 0 : 44;
+  const framed = body.classList.contains("framed");
+  const pad = fullscreen ? 0 : framed ? PHONE_MARGIN : 24;
+  const top = fullscreen || framed ? 0 : 44;
   const availW = innerWidth - pad * 2;
   const availH = innerHeight - top - pad * 2;
   const scale = Math.min(availW / videoSize.width, availH / videoSize.height);
   const w = videoSize.width * scale;
   const h = videoSize.height * scale;
-  return { x: (innerWidth - w) / 2, y: top + pad + (availH - h) / 2, w, h, r: fullscreen ? 0 : Math.min(w, h) * 0.085 };
+  const r = fullscreen ? 0 : Math.min(w, h) * (framed ? PHONE_RADIUS : 0.085);
+  return { x: (innerWidth - w) / 2, y: top + pad + (availH - h) / 2, w, h, r };
+}
+
+/* ── Phone frame: while mirroring, the window is just the phone ──
+   No title bar, background or window edge: the backend shrinks the window
+   around the mirrored screen and makes it transparent, so only the phone's
+   rounded screen shows, floating on the desktop. */
+
+// Matches PHONE_MARGIN in src/main.rs and --phone-margin in style.css.
+const PHONE_MARGIN = 18;
+// iPhone display corners, as a share of the screen's short side.
+const PHONE_RADIUS = 0.125;
+
+let phoneFrame = false;
+let reshapingUntil = 0;
+
+function syncFramed() {
+  const framed = phoneFrame && !body.classList.contains("fullscreen");
+  if (framed === body.classList.contains("framed")) return;
+  body.classList.toggle("framed", framed);
+  document.documentElement.classList.toggle("framed", framed);
+}
+
+/** Asks the backend to shape the window to the phone (or put it back). */
+function setPhoneFrame(on) {
+  if (!on && !phoneFrame) return;
+  phoneFrame = on;
+  // The window jumps to its new size; the screen follows it without springing.
+  reshapingUntil = performance.now() + 700;
+  const reshaped = request("phone-frame", { on, width: videoSize.width, height: videoSize.height }).catch(() => {});
+  // Going back, stay see-through until the window is its old size again.
+  if (on) syncFramed();
+  else reshaped.then(() => !phoneFrame && syncFramed());
 }
 
 let screenOpen = false;
 
 function openScreen() {
   const target = screenRect();
+  if (body.classList.contains("framed")) {
+    // The window itself becomes the phone, so the screen just appears in it.
+    screenOpen = true;
+    geo.iconSize = 0;
+    geo.fullSize = target.w;
+    tile.classList.add("morphing");
+    jumpGeo(target);
+    if (!screenEl.classList.contains("shown")) {
+      screenEl.classList.add("shown");
+      play(screenEl, [{ opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1 }], cssSpring(0.5, 0.82));
+    }
+    return;
+  }
   if (!screenEl.classList.contains("shown")) {
     restTile();
     tilt.springs.forEach((s) => s.snap(0));
@@ -321,9 +374,18 @@ function openScreen() {
   setGeo(target, 0.55, 0.8);
 }
 
-function closeScreen() {
+function closeScreen(instant = false) {
   if (!screenEl.classList.contains("shown")) return;
   screenOpen = false;
+  if (instant) {
+    // The window is changing back from the phone; there's no icon to zoom into yet.
+    geo.springs.forEach((s) => s.snap(s.value));
+    screenEl.classList.remove("shown", "reflow");
+    tile.classList.remove("morphing");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    settle();
+    return;
+  }
   const target = iconRect();
   geo.iconSize = target.w;
   geo.fullSize = Math.max(geo.w.value, target.w + 1);
@@ -341,7 +403,7 @@ addEventListener("resize", () => {
   const now = performance.now();
   if (screenOpen) {
     // Follow a dragged edge directly; spring into a one-off change like full screen.
-    if (now - lastResize < 150) jumpGeo(screenRect());
+    if (now - lastResize < 150 || now < reshapingUntil) jumpGeo(screenRect());
     else setGeo(screenRect(), 0.42, 0.92);
   }
   lastResize = now;
@@ -393,7 +455,9 @@ function applyStatus(status) {
 
   if (status.state === "idle") {
     swapText($(".status-text"), "Ready for AirPlay");
-    if (phase === "live") closeScreen();
+    const framed = phoneFrame;
+    setPhoneFrame(false);
+    if (phase === "live") closeScreen(framed);
     releaseCapture();
     resetDecoder();
     setPhase("idle");
@@ -1317,6 +1381,7 @@ function configure(config, width, height) {
   }
   if (resized && screenOpen) {
     screenEl.classList.add("reflow");
+    if (phoneFrame) setPhoneFrame(true);
     setGeo(screenRect(), 0.5, 0.86);
   }
 }
@@ -1342,7 +1407,9 @@ function drawFrame(frame) {
     canvas.height = height;
   }
   if (width !== videoSize.width || height !== videoSize.height) {
+    const turned = width > height !== videoSize.width > videoSize.height;
     videoSize = { width, height };
+    if (screenOpen && phoneFrame && turned) setPhoneFrame(true);
     if (screenOpen) setGeo(screenRect(), 0.5, 0.86);
   }
   ctx.drawImage(frame, 0, 0);
@@ -1351,6 +1418,7 @@ function drawFrame(frame) {
   if (phase !== "live") {
     if (body.classList.contains("renaming")) endRename();
     setPhase("live");
+    setPhoneFrame(true);
     openScreen();
   }
 }
@@ -1447,6 +1515,9 @@ async function syncFullscreen() {
   const fullscreen = appWindow ? await appWindow.isFullscreen() : !!document.fullscreenElement;
   if (fullscreen === body.classList.contains("fullscreen")) return;
   body.classList.toggle("fullscreen", fullscreen);
+  syncFramed();
+  // Back from full screen: shape the window to the phone again.
+  if (!fullscreen && phoneFrame) setPhoneFrame(true);
   const label = fullscreen ? "Exit Full Screen" : "Enter Full Screen";
   for (const el of document.querySelectorAll('[data-action="fullscreen"]')) el.setAttribute("aria-label", label);
   if (screenOpen) setGeo(screenRect(), 0.45, 0.9);
@@ -1501,7 +1572,13 @@ document.addEventListener("click", (event) => {
   if (button) actions[button.dataset.action]?.();
 });
 // Double-clicks belong to the iPad while mouse control is on.
-screenEl.addEventListener("dblclick", () => !control.on && toggleFullscreen());
+screenEl.addEventListener("dblclick", () => !control.on && !body.classList.contains("framed") && toggleFullscreen());
+// With no title bar, the phone itself moves the window; double-click still goes full screen.
+screenEl.addEventListener("mousedown", (event) => {
+  if (!body.classList.contains("framed") || control.on || event.button !== 0) return;
+  if (event.detail === 2) toggleFullscreen();
+  else appWindow?.startDragging().catch(() => {});
+});
 addEventListener("keydown", (event) => {
   if (event.key === "Escape" && body.classList.contains("code-open")) return actions["code-cancel"]();
   if (event.key === "," && event.ctrlKey) return showSettings(!body.classList.contains("settings-open"));
