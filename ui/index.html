@@ -159,6 +159,21 @@
       <button class="pill small banner-button" type="button" data-action="banner-show">Show</button>
     </div>
 
+    <div class="update-card" role="alertdialog" aria-labelledby="update-title" aria-describedby="update-detail" inert>
+      <span class="update-icon" aria-hidden="true">
+        <img src="assets/tile-bg.png" alt="" draggable="false"><img src="assets/tile-airplay.png" alt="" draggable="false"><img src="assets/tile-crab.png" alt="" draggable="false">
+      </span>
+      <span class="update-text">
+        <b class="update-title" id="update-title">Update Available</b>
+        <small class="update-detail" id="update-detail" aria-live="polite"></small>
+        <span class="update-bar" aria-hidden="true"><i></i></span>
+      </span>
+      <span class="update-buttons">
+        <button class="pill small update-later" type="button" data-action="update-later">Later</button>
+        <button class="pill small update-install" type="button" data-action="update-install">Update</button>
+      </span>
+    </div>
+
     <section class="settings" aria-label="Settings" inert>
       <aside class="set-sidebar" data-tauri-drag-region>
         <label class="set-search">
