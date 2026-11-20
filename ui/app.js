@@ -317,8 +317,9 @@ function screenRect() {
    around the mirrored screen and makes it transparent, so only the phone's
    rounded screen shows, floating on the desktop. */
 
-// Matches PHONE_MARGIN in src/main.rs and --phone-margin in style.css.
-const PHONE_MARGIN = 18;
+// Room for the phone's shadow. Matches PHONE_MARGIN in src/main.rs: none on
+// Windows, where anything around the phone would show as a box.
+const PHONE_MARGIN = navigator.userAgent.includes("Windows") ? 0 : 18;
 // iPhone display corners, as a share of the screen's short side.
 const PHONE_RADIUS = 0.125;
 
@@ -379,7 +380,9 @@ function openScreen() {
     if (!screenEl.classList.contains("shown")) {
       screenEl.classList.add("shown");
       sendShape();
-      play(screenEl, [{ opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1 }], cssSpring(0.5, 0.82));
+      // Without a margin (Windows) the window has no room to grow into, so it only fades in.
+      const from = PHONE_MARGIN ? 0.94 : 1;
+      play(screenEl, [{ opacity: 0, scale: from }, { opacity: 1, scale: 1 }], cssSpring(0.5, 0.82));
     }
     return;
   }

@@ -21,8 +21,10 @@ use settings::Appearance;
 use tauri::{LogicalSize, Manager, PhysicalPosition, PhysicalSize};
 
 /// Space kept around the mirrored screen while the window is shrunk to the phone,
-/// so its shadow has room. Matches `--phone-margin` in ui/style.css.
-const PHONE_MARGIN: f64 = 18.0;
+/// so its shadow has room. Matches PHONE_MARGIN in ui/app.js. Windows gets none:
+/// whatever it draws around a transparent window (its frame, or a dark backing)
+/// shows up as a box around the phone, so there the window is just the phone.
+const PHONE_MARGIN: f64 = if cfg!(windows) { 0.0 } else { 18.0 };
 /// The window's title while it's shrunk to the phone.
 const PHONE_TITLE: &str = "RustPlay Mirroring";
 /// The normal window's minimum size (tauri.conf.json).
@@ -156,6 +158,10 @@ impl App {
                 window.set_size(restore.size)?;
                 window.set_position(restore.position)?;
                 clip_window(window, None);
+                set_window_border(window, true);
+                if cfg!(windows) {
+                    window.set_resizable(true)?;
+                }
                 window.set_shadow(true)?;
                 window.set_title("RustPlay")?;
                 apply_appearance(window, self.settings.get().appearance);
@@ -165,6 +171,11 @@ impl App {
 
         window.set_shadow(false)?;
         window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)))?;
+        set_window_border(window, false);
+        // A stretched edge would leave window showing beside the phone.
+        if cfg!(windows) {
+            window.set_resizable(false)?;
+        }
         // Window managers can match this title to drop their own edge (e.g. a niri focus ring).
         window.set_title(PHONE_TITLE)?;
         // Full screen shows the phone on black; it reshapes once full screen ends.
@@ -260,6 +271,31 @@ fn clip_window(window: &tauri::WebviewWindow, shape: Option<Shape>) {
 
 #[cfg(not(windows))]
 fn clip_window(_window: &tauri::WebviewWindow, _shape: Option<Shape>) {}
+
+/// Windows 11 outlines every window with a thin border; around the phone it
+/// would read as a frame. Older Windows has no such border and ignores this.
+#[cfg(windows)]
+fn set_window_border(window: &tauri::WebviewWindow, on: bool) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DWMWA_BORDER_COLOR, DWMWA_COLOR_DEFAULT, DWMWA_COLOR_NONE, DwmSetWindowAttribute,
+    };
+
+    let Ok(hwnd) = window.hwnd() else { return };
+    let raw = hwnd.0 as isize;
+    let _ = window.run_on_main_thread(move || unsafe {
+        let color: u32 = if on { DWMWA_COLOR_DEFAULT } else { DWMWA_COLOR_NONE };
+        let _ = DwmSetWindowAttribute(
+            HWND(raw as *mut _),
+            DWMWA_BORDER_COLOR,
+            (&color as *const u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+        );
+    });
+}
+
+#[cfg(not(windows))]
+fn set_window_border(_window: &tauri::WebviewWindow, _on: bool) {}
 
 struct Endpoint(String);
 
