@@ -494,9 +494,9 @@ body.paused .veil svg, body.paused .veil b, body.paused .veil span { transform: 
 /* ── Phone frame ───────────────────────────────────────────
    While mirroring, the window shrinks to the phone and turns transparent:
    no title bar, background or border, just the phone's rounded screen with
-   a hairline edge and a soft shadow (that's what --phone-margin is for). */
+   a hairline edge and a soft shadow (PHONE_MARGIN in app.js leaves room for it;
+   on Windows there's no room, so no shadow). */
 
-:root { --phone-margin: 18px; }
 html.framed, html.framed body { background: transparent; transition: none; }
 body.framed .screen {
   background: transparent;
