@@ -40,6 +40,7 @@
 | **File sharing** | Sends and receives files through the free LocalSend app. |
 | **Mouse and keyboard** | Controls your iPad with your PC's mouse and keyboard over Bluetooth (experimental). |
 | **Light and dark mode** | Follows Windows, or stays the way you choose. |
+| **Updates** | Tells you when a new version is out and installs it when you click **Update**. |
 
 Everything stays on your own network. RustPlay has no account, and nothing goes through the cloud.
 
@@ -205,7 +206,9 @@ cargo run --release
 
 The finished program is `target\release\rustplay.exe` on Windows, or `target/release/rustplay` on Linux. It's a single file with the interface built in, so you can copy it anywhere.
 
-Pushing a tag like `v0.3.0` makes GitHub Actions build the Windows installer, the portable exe, the `.deb`, the AppImage and a plain Linux binary, and publish them as a release (`.github/workflows/release.yml`).
+RustPlay looks for updates at launch and every few hours, and asks before installing anything. Updates are signed, and RustPlay refuses a download whose signature doesn't match the key in `tauri.conf.json`. The installer and the AppImage update themselves. The `.deb` updates through `dpkg`, which asks for your password. The portable exe is offered the installer. A copy you built yourself on Linux doesn't update itself.
+
+Pushing a tag like `v0.3.0` makes GitHub Actions build the Windows installer, the portable exe, the `.deb`, the AppImage and a plain Linux binary, and publish them as a release, with the `latest.json` that installed copies check (`.github/workflows/release.yml`). The workflow signs the updates with the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets.
 
 <details>
 <summary><b>How it works</b></summary>

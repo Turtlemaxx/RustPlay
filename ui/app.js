@@ -269,6 +269,7 @@ const geo = {
     root.setProperty("--screen-y", `${this.y.value.toFixed(2)}px`);
     root.setProperty("--screen-w", `${Math.max(1, this.w.value).toFixed(2)}px`);
     root.setProperty("--screen-h", `${Math.max(1, this.h.value).toFixed(2)}px`);
+    sendShape();
     // The icon art fades out over the first part of the zoom (and back in at the end of a close).
     const progress = (this.w.value - this.iconSize) / Math.max(1, this.fullSize - this.iconSize);
     cover.style.opacity = (1 - smoothstep(0.04, 0.4, progress)).toFixed(3);
@@ -329,6 +330,27 @@ function syncFramed() {
   if (framed === body.classList.contains("framed")) return;
   body.classList.toggle("framed", framed);
   document.documentElement.classList.toggle("framed", framed);
+  sendShape();
+}
+
+/* On Windows the backend cuts the window to exactly this shape, so nothing of
+   the window around the phone can show (see clip_window in src/main.rs). */
+let sentShape = "";
+let shapeQueued = false;
+function sendShape() {
+  if (shapeQueued) return;
+  shapeQueued = true;
+  requestAnimationFrame(() => {
+    shapeQueued = false;
+    const framed = body.classList.contains("framed") && screenEl.classList.contains("shown");
+    const shape = framed
+      ? { x: geo.x.value, y: geo.y.value, w: geo.w.value, h: geo.h.value, r: geo.r.value }
+      : null;
+    const key = shape ? Object.values(shape).map((v) => v.toFixed(1)).join() : "none";
+    if (key === sentShape) return;
+    sentShape = key;
+    request("phone-shape", shape ?? {}).catch(() => (sentShape = ""));
+  });
 }
 
 /** Asks the backend to shape the window to the phone (or put it back). */
@@ -356,6 +378,7 @@ function openScreen() {
     jumpGeo(target);
     if (!screenEl.classList.contains("shown")) {
       screenEl.classList.add("shown");
+      sendShape();
       play(screenEl, [{ opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1 }], cssSpring(0.5, 0.82));
     }
     return;
@@ -381,6 +404,7 @@ function closeScreen(instant = false) {
     // The window is changing back from the phone; there's no icon to zoom into yet.
     geo.springs.forEach((s) => s.snap(s.value));
     screenEl.classList.remove("shown", "reflow");
+    sendShape();
     tile.classList.remove("morphing");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     settle();
@@ -437,6 +461,7 @@ function setPhase(next) {
   phase = next;
   body.dataset.phase = next;
   showHud(next === "live");
+  renderUpdate();
 }
 
 function applyStatus(status) {
@@ -1461,6 +1486,7 @@ async function connect() {
       loadDrop().catch((error) => console.warn("drop info", error));
       loadSettings().catch((error) => console.warn("settings", error));
       request("remote-status").then(applyRemote).catch(() => {});
+      request("update-status").then(applyUpdate).catch(() => {});
     };
     socket.onmessage = ({ data }) => {
       if (typeof data === "string") {
@@ -1469,6 +1495,7 @@ async function connect() {
         if (message.type === "drop") onDropEvent(message);
         if (message.type === "remote") applyRemote(message);
         if (message.type === "code") applyCode(message);
+        if (message.type === "update") applyUpdate(message);
         if (message.type === "reply") {
           const waiter = pending.get(message.id);
           pending.delete(message.id);
@@ -1534,7 +1561,57 @@ async function toggleFullscreen(force) {
   setTimeout(syncFullscreen, 60);
 }
 
+/* ── Updates ─────────────────────────────────────────────
+   The backend looks for a new release; this asks before installing it. The
+   prompt waits while you're mirroring, and "Later" hides it until the next
+   version (or the next launch). */
+
+const updateCard = $(".update-card");
+let update = { state: "none" };
+let updateDismissed = null;
+
+function applyUpdate(message) {
+  update = message;
+  renderUpdate();
+}
+
+function renderUpdate() {
+  if (!updateCard) return;
+  const { state, version } = update;
+  const busy = state === "downloading" || state === "installing";
+  const show = state !== "none" && (busy || (phase === "idle" && updateDismissed !== `${state}:${version}`));
+  updateCard.classList.toggle("show", show);
+  updateCard.toggleAttribute("inert", !show);
+  updateCard.dataset.state = state;
+  if (state === "none") return;
+  const title = {
+    available: "Update Available",
+    downloading: "Downloading Update",
+    installing: "Installing Update",
+    failed: "Update Failed",
+  }[state];
+  const pct = typeof update.progress === "number" ? ` · ${Math.round(update.progress * 100)}%` : "";
+  const detail = {
+    available: `RustPlay ${version} is ready to install.`,
+    downloading: `RustPlay ${version}${pct}`,
+    installing: "RustPlay will restart in a moment.",
+    failed: update.error ?? "Something went wrong.",
+  }[state];
+  $(".update-title").textContent = title;
+  $(".update-detail").textContent = detail;
+  $(".update-card .update-install").textContent = state === "failed" ? "Try Again" : "Update";
+  $(".update-bar").style.setProperty("--progress", update.progress ?? 0);
+}
+
 const actions = {
+  "update-install": () => {
+    applyUpdate({ ...update, state: "downloading", progress: 0 });
+    request("update-install").catch((error) => applyUpdate({ ...update, state: "failed", error }));
+  },
+  "update-later": () => {
+    updateDismissed = `${update.state}:${update.version}`;
+    renderUpdate();
+  },
   close: () => appWindow?.close(),
   minimize: () => appWindow?.minimize(),
   fullscreen: () => toggleFullscreen(),

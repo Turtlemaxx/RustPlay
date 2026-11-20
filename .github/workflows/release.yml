@@ -12,6 +12,9 @@ permissions:
 
 env:
   TAURI_CLI_VERSION: "2.12.4"
+  # Signs the installers so installed copies accept them as updates (src/updates.rs).
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
   windows:
@@ -31,6 +34,7 @@ jobs:
           mkdir dist
           cp target/release/rustplay.exe "dist/RustPlay-$version-windows-x64.exe"
           cp target/release/bundle/nsis/*-setup.exe "dist/RustPlay-$version-windows-x64-setup.exe"
+          cargo tauri signer sign --app-version "$version" "dist/RustPlay-$version-windows-x64-setup.exe"
           ls -l dist
       - uses: actions/upload-artifact@v4
         with:
@@ -59,6 +63,8 @@ jobs:
           cp target/release/bundle/deb/*.deb "dist/RustPlay-$version-linux-amd64.deb"
           cp target/release/bundle/appimage/*.AppImage "dist/RustPlay-$version-linux-x86_64.AppImage"
           tar -czf "dist/RustPlay-$version-linux-x86_64.tar.gz" -C target/release rustplay
+          cargo tauri signer sign --app-version "$version" "dist/RustPlay-$version-linux-amd64.deb"
+          cargo tauri signer sign --app-version "$version" "dist/RustPlay-$version-linux-x86_64.AppImage"
           ls -l dist
       - uses: actions/upload-artifact@v4
         with:
@@ -74,6 +80,42 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Write latest.json, which installed copies check for updates
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import glob, json, os, datetime
+          tag, repo = os.environ["TAG"], os.environ["REPO"]
+          version = tag.lstrip("v")
+          def entry(name):
+              path = f"dist/{name}"
+              return {
+                  "signature": open(path + ".sig").read().strip(),
+                  "url": f"https://github.com/{repo}/releases/download/{tag}/{name}",
+              }
+          setup = entry(f"RustPlay-{version}-windows-x64-setup.exe")
+          appimage = entry(f"RustPlay-{version}-linux-x86_64.AppImage")
+          deb = entry(f"RustPlay-{version}-linux-amd64.deb")
+          manifest = {
+              "version": version,
+              "notes": f"See https://github.com/{repo}/releases/tag/{tag}",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": {
+                  # The installer, and the portable exe (which gets the installer).
+                  "windows-x86_64-nsis": setup,
+                  "windows-x86_64": setup,
+                  "linux-x86_64-appimage": appimage,
+                  "linux-x86_64-deb": deb,
+                  "linux-x86_64": appimage,
+              },
+          }
+          json.dump(manifest, open("dist/latest.json", "w"), indent=2)
+          for sig in glob.glob("dist/*.sig"):
+              os.remove(sig)
+          PY
+          cat dist/latest.json
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

@@ -9,6 +9,7 @@ mod remote;
 mod remote;
 mod settings;
 mod ui_socket;
+mod updates;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -39,6 +40,7 @@ struct App {
     receiver: airplay::Running,
     files: Arc<drop::FileDrop>,
     remote: Arc<remote::Remote>,
+    updates: Arc<updates::Updates>,
     settings: settings::Store,
     window: Option<tauri::WebviewWindow>,
     /// False for a second copy of the app (RUSTPLAY_NAME), which keeps the name it was given.
@@ -53,6 +55,7 @@ impl App {
         match request["type"].as_str() {
             Some(kind) if kind.starts_with("drop-") => self.files.command(request),
             Some(kind) if kind.starts_with("remote-") => self.remote.command(request),
+            Some(kind) if kind.starts_with("update-") => self.updates.command(request),
             Some("rename") => match self.rename(request["name"].as_str().unwrap_or_default()) {
                 Ok(name) => json!({ "ok": true, "name": name }),
                 Err(error) => json!({ "ok": false, "error": error }),
@@ -74,6 +77,17 @@ impl App {
                     Ok(()) => json!({ "ok": true }),
                     Err(err) => json!({ "ok": false, "error": err.to_string() }),
                 }
+            }
+            Some("phone-shape") => {
+                if let Some(window) = &self.window {
+                    let rect = ["x", "y", "w", "h", "r"].map(|key| request[key].as_f64());
+                    let shape = match rect {
+                        [Some(x), Some(y), Some(w), Some(h), Some(r)] => Some(Shape { x, y, w, h, r }),
+                        _ => None,
+                    };
+                    clip_window(window, shape);
+                }
+                json!({ "ok": true })
             }
             Some("stop") => {
                 self.hub.stop_mirroring();
@@ -141,6 +155,7 @@ impl App {
                 window.set_min_size(Some(LogicalSize::new(MIN_SIZE.0, MIN_SIZE.1)))?;
                 window.set_size(restore.size)?;
                 window.set_position(restore.position)?;
+                clip_window(window, None);
                 window.set_shadow(true)?;
                 window.set_title("RustPlay")?;
                 apply_appearance(window, self.settings.get().appearance);
@@ -192,6 +207,59 @@ impl App {
         Ok(())
     }
 }
+
+/// The mirrored screen's rounded rectangle, in CSS pixels from the window's top left.
+#[cfg_attr(not(windows), allow(dead_code))]
+struct Shape {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    r: f64,
+}
+
+/// Cuts the window down to the phone's screen (None: the whole window again).
+///
+/// Windows keeps a native frame behind borderless windows, and once the page is
+/// transparent its frosted glass and minimize/maximize/close buttons show through.
+/// A window region removes everything outside the phone, frame included.
+/// Other platforms draw nothing behind a transparent window, so there's nothing to cut.
+#[cfg(windows)]
+fn clip_window(window: &tauri::WebviewWindow, shape: Option<Shape>) {
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::Graphics::Gdi::{ClientToScreen, CreateRoundRectRgn, SetWindowRgn};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    let Ok(hwnd) = window.hwnd() else { return };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    // HWND isn't Send; the region is set on the window's own thread.
+    let raw = hwnd.0 as isize;
+    let _ = window.run_on_main_thread(move || unsafe {
+        let hwnd = HWND(raw as *mut _);
+        let Some(shape) = shape else {
+            SetWindowRgn(hwnd, None, true);
+            return;
+        };
+        // Regions are relative to the window's outer corner, the page to its client area.
+        let mut outer = RECT::default();
+        let mut origin = POINT::default();
+        if GetWindowRect(hwnd, &mut outer).is_err() || !ClientToScreen(hwnd, &mut origin).as_bool() {
+            return;
+        }
+        let (dx, dy) = ((origin.x - outer.left) as f64, (origin.y - outer.top) as f64);
+        let px = |v: f64| (v * scale).round() as i32;
+        let (left, top) = (px(shape.x) + dx as i32, px(shape.y) + dy as i32);
+        let (right, bottom) = (left + px(shape.w), top + px(shape.h));
+        let corner = px(shape.r * 2.0);
+        // The region's right and bottom edges are exclusive.
+        let region = CreateRoundRectRgn(left, top, right + 1, bottom + 1, corner, corner);
+        // On success the window owns the region and frees it.
+        SetWindowRgn(hwnd, Some(region), true);
+    });
+}
+
+#[cfg(not(windows))]
+fn clip_window(_window: &tauri::WebviewWindow, _shape: Option<Shape>) {}
 
 struct Endpoint(String);
 
@@ -248,6 +316,7 @@ fn main() {
 
     builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let file = if second_copy.is_some() { "settings-dev.json" } else { "settings.json" };
             let config_dir = app.path().app_config_dir()?;
@@ -278,6 +347,7 @@ fn main() {
 
             let remote = remote::Remote::start(hub.clone());
             app.manage(remote.clone());
+            let updates = updates::Updates::start(app.handle().clone(), hub.clone());
 
             let window = app.get_webview_window("main");
             if let Some(window) = &window {
@@ -291,6 +361,7 @@ fn main() {
                 receiver,
                 files,
                 remote,
+                updates,
                 settings,
                 window: window.clone(),
                 persist_name,
