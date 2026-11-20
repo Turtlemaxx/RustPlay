@@ -1,6 +1,6 @@
 [package]
 name = "rustplay"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
@@ -31,8 +31,10 @@ tokio-tungstenite = "0.30.0"
 tokio-util = { version = "0.7.20", features = ["io"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 tauri-plugin-dialog = "2"
-windows = { version = "0.62", features = ["Devices_Bluetooth", "Devices_Bluetooth_GenericAttributeProfile", "Foundation", "Foundation_Collections", "Storage_Streams", "Devices_Enumeration", "Devices_Radios", "Win32_Media"] }
 tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Devices_Bluetooth", "Devices_Bluetooth_GenericAttributeProfile", "Foundation", "Foundation_Collections", "Storage_Streams", "Devices_Enumeration", "Devices_Radios", "Win32_Media"] }
 
 [build-dependencies]
 cc = "1.10.0"

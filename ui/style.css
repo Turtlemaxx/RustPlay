@@ -491,6 +491,65 @@ body[data-phase="connecting"] .spinner { transform: none; opacity: 1; }
 body.paused .veil { opacity: 1; }
 body.paused .veil svg, body.paused .veil b, body.paused .veil span { transform: none; }
 
+/* ── Phone frame ───────────────────────────────────────────
+   While mirroring, the window shrinks to the phone and turns transparent:
+   no title bar, background or border, just the phone's rounded screen with
+   a hairline edge and a soft shadow (that's what --phone-margin is for). */
+
+:root { --phone-margin: 18px; }
+html.framed, html.framed body { background: transparent; transition: none; }
+body.framed .screen {
+  background: transparent;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.38), 0 0 0 0.5px rgba(0, 0, 0, 0.35);
+}
+body.framed .screen canvas { border-radius: inherit; }
+/* The glassy rim at the edge of the display. */
+body.framed .screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+}
+body.framed.capturing .screen {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent), 0 6px 16px rgba(0, 0, 0, 0.38);
+}
+/* Everything drawn over the phone is placed against the phone's screen, not the
+   window: the window can end up wider or taller than the phone (a tiling window
+   manager, or a dragged edge). app.js keeps --screen-x/y/w/h up to date. */
+:root { --screen-x: 0px; --screen-y: 0px; --screen-w: 100vw; --screen-h: 100vh; }
+/* Window buttons only appear with the control bar, tucked inside the screen's corner. */
+body.framed .titlebar {
+  inset: auto;
+  left: var(--screen-x);
+  top: var(--screen-y);
+  width: var(--screen-w);
+  opacity: 0;
+  pointer-events: none;
+}
+body.framed .lights { padding-left: max(20px, calc(var(--screen-w) * 0.07)); }
+body.framed.hud-visible .titlebar { opacity: 1; }
+body.framed.hud-visible .lights { pointer-events: auto; }
+body.framed .hud {
+  left: calc(var(--screen-x) + var(--screen-w) / 2);
+  bottom: auto;
+  top: calc(var(--screen-y) + var(--screen-h) - 44px - 16px);
+  max-width: calc(var(--screen-w) - 16px);
+}
+body.framed .hud-device, body.framed .hud-device + .hud-sep { display: none; }
+body.framed .hud .slider { width: 76px; }
+body.framed .banner {
+  top: calc(var(--screen-y) + 46px);
+  right: calc(100vw - var(--screen-x) - var(--screen-w) + 8px);
+  width: min(330px, calc(var(--screen-w) - 16px));
+}
+body.framed .control-hint {
+  left: calc(var(--screen-x) + var(--screen-w) / 2);
+  top: calc(var(--screen-y) + 46px);
+  max-width: calc(var(--screen-w) - 16px);
+}
+
 /* ── HUD ───────────────────────────────────────────────── */
 
 .hud {

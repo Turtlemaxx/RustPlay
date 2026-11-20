@@ -5,12 +5,12 @@
 <h1 align="center">RustPlay</h1>
 
 <p align="center">
-  <b>Mirror your iPhone or iPad to your Windows PC, with sound.</b><br>
+  <b>Mirror your iPhone or iPad to your Windows or Linux PC, with sound.</b><br>
   A free AirPlay receiver written in Rust, with an interface that feels at home next to your Apple devices.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Turtlemaxx/RustPlay/releases/latest"><b>Download for Windows</b></a>
+  <a href="https://github.com/Turtlemaxx/RustPlay/releases/latest"><b>Download for Windows or Linux</b></a>
   &nbsp;·&nbsp;
   <a href="#get-started">Get started</a>
   &nbsp;·&nbsp;
@@ -20,6 +20,7 @@
 <p align="center">
   <a href="https://github.com/Turtlemaxx/RustPlay/releases/latest"><img src="https://img.shields.io/github/v/release/Turtlemaxx/RustPlay" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 and 11">
+  <img src="https://img.shields.io/badge/Linux-x86__64-FCC624" alt="Linux x86_64">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/Turtlemaxx/RustPlay" alt="License: GPL-3.0"></a>
 </p>
 
@@ -34,7 +35,7 @@
 
 | Feature | What you get |
 | --- | --- |
-| **Screen mirroring** | Shows your iPhone or iPad on your PC, with sound and a volume slider. |
+| **Screen mirroring** | Shows your iPhone or iPad on your PC, with sound and a volume slider. The window becomes just the phone, floating on your desktop. |
 | **Connection code** | Optionally asks for a new 4-digit code each time a device connects. |
 | **File sharing** | Sends and receives files through the free LocalSend app. |
 | **Mouse and keyboard** | Controls your iPad with your PC's mouse and keyboard over Bluetooth (experimental). |
@@ -44,17 +45,26 @@ Everything stays on your own network. RustPlay has no account, and nothing goes 
 
 ## Get started
 
-1. **Download** `RustPlay-…-windows-x64.exe` from the [latest release](https://github.com/Turtlemaxx/RustPlay/releases/latest) and run it. There's nothing to install.
-2. **Windows may warn you.** The exe isn't code-signed, so SmartScreen can show "Windows protected your PC". Click **More info**, then **Run anyway**.
-3. **Allow the firewall prompt** on first launch, or your iPhone can't connect.
+1. **Download** from the [latest release](https://github.com/Turtlemaxx/RustPlay/releases/latest):
+
+   | You have | Download |
+   | --- | --- |
+   | Windows, and want it in the Start menu | `RustPlay-…-windows-x64-setup.exe`, the installer |
+   | Windows, with nothing to install | `RustPlay-…-windows-x64.exe`, the portable app |
+   | Debian, Ubuntu or Mint | `RustPlay-…-linux-amd64.deb`. Install it with `sudo apt install ./RustPlay-…-linux-amd64.deb` |
+   | Any other Linux | `RustPlay-…-linux-x86_64.AppImage`. Make it executable (`chmod +x`) and run it |
+
+2. **Windows may warn you.** RustPlay isn't code-signed, so SmartScreen can show "Windows protected your PC". Click **More info**, then **Run anyway**.
+3. **Allow the firewall prompt** on first launch, or your iPhone can't connect. On Linux, if you run a firewall, allow TCP 7000 and 53317, UDP 5353 and 53317, and the ports RustPlay picks for video and audio.
 4. **On your iPhone or iPad**, open Control Center, tap **Screen Mirroring**, and choose **RustPlay**. Both devices have to be on the same network.
 
 ### What you need
 
-- Windows 10 or 11, 64-bit, with the WebView2 runtime. It's built into Windows 11 and already on most Windows 10 PCs.
+- Windows 10 or 11, 64-bit, with the WebView2 runtime. It's built into Windows 11 and already on most Windows 10 PCs. The installer adds it if it's missing.
+- Or a 64-bit Linux desktop with WebKitGTK 4.1 (the `.deb` pulls it in).
 - An iPhone or iPad on the same network as the PC.
 - For file sharing: the free [LocalSend](https://localsend.org) app on the other device.
-- For mouse and keyboard: Bluetooth on the PC that can act as a mouse and keyboard. RustPlay tells you if yours can't.
+- For mouse and keyboard: Windows, and Bluetooth on the PC that can act as a mouse and keyboard. RustPlay tells you if yours can't.
 
 ## Important to know
 
@@ -71,7 +81,9 @@ Everything stays on your own network. RustPlay has no account, and nothing goes 
 
 ### Mirroring
 
-While you're mirroring, move the mouse to bring up the control bar:
+While you're mirroring, the window shrinks to your phone's screen with no title bar or border, so it looks like the phone is sitting on your desktop. Drag the phone to move it. It turns with your phone, and the normal window comes back when mirroring ends.
+
+Move the mouse to bring up the control bar, along with the close and minimize buttons in the phone's top corner:
 
 <p align="center">
   <img src="docs/images/control-bar.png" width="420" alt="The control bar: device name, volume slider, mouse and keyboard button, full screen button, and Stop">
@@ -81,6 +93,7 @@ While you're mirroring, move the mouse to bring up the control bar:
 | --- | --- |
 | Change the volume | Use the slider, scroll over the bar, or press ↑ / ↓. Your iPhone's volume buttons work too. |
 | Mute | Click the speaker, or press M. |
+| Move the phone | Drag it anywhere on the screen. |
 | Go full screen | Click the full screen button, double-click the screen, or press F. Esc leaves full screen. |
 | End mirroring | Click **Stop**. |
 | Rename the receiver | Click the name under the icon. Your iPhone shows the new name within a few seconds. |
@@ -161,11 +174,28 @@ To disconnect, RustPlay switches the PC's Bluetooth off and on for a moment, bec
 | The window doesn't open | Install the [WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/) from Microsoft. |
 | Opening RustPlay only brings a window forward | That's normal: one copy runs at a time. |
 
-For anything else, RustPlay keeps a log of its last run at `%APPDATA%\app.rustplay.receiver\rustplay.log`. Your settings are in the same folder.
+For anything else, RustPlay keeps a log of its last run at `%APPDATA%\app.rustplay.receiver\rustplay.log` (on Linux, `~/.config/app.rustplay.receiver/rustplay.log`). Your settings are in the same folder.
+
+#### On Linux
+
+Mouse and keyboard control is Windows-only for now. If you use niri, these rules leave out its focus ring and shadow while RustPlay shows a phone, so only the phone shows:
+
+```kdl
+window-rule {
+    match app-id="^rustplay$"
+    draw-border-with-background false
+}
+window-rule {
+    match app-id="^rustplay$" title="^RustPlay Mirroring$"
+    focus-ring { off; }
+    border { off; }
+    shadow { off; }
+}
+```
 
 ## Build from source
 
-You need [Rust](https://rustup.rs) and the Visual Studio C++ build tools.
+You need [Rust](https://rustup.rs). On Windows you also need the Visual Studio C++ build tools. On Linux you need a C compiler and the WebKitGTK and ALSA headers (on Debian or Ubuntu: `sudo apt install build-essential libwebkit2gtk-4.1-dev libasound2-dev`).
 
 ```bash
 git clone https://github.com/Turtlemaxx/RustPlay.git
@@ -173,7 +203,9 @@ cd RustPlay
 cargo run --release
 ```
 
-The finished program is `target\release\rustplay.exe`. It's a single file with the interface built in, so you can copy it anywhere.
+The finished program is `target\release\rustplay.exe` on Windows, or `target/release/rustplay` on Linux. It's a single file with the interface built in, so you can copy it anywhere.
+
+Pushing a tag like `v0.3.0` makes GitHub Actions build the Windows installer, the portable exe, the `.deb`, the AppImage and a plain Linux binary, and publish them as a release (`.github/workflows/release.yml`).
 
 <details>
 <summary><b>How it works</b></summary>
@@ -186,7 +218,7 @@ The finished program is `target\release\rustplay.exe`. It's a single file with t
 - `src/airplay/mirror.rs` decrypts the H.264 stream (AES-128-CTR) and survives the iPhone locking and reconnecting.
 - `src/airplay/audio.rs` decrypts the audio (AES-128-CBC per RTP packet), decodes AAC-ELD with fdk-aac, and plays it through the default output with a ~70 ms jitter buffer.
 - `src/drop.rs` runs Drop on LocalSend's own Rust core (`vendor/localsend-core`). That covers multicast discovery, the HTTPS server with certificate pinning, auto-accepting uploads into Downloads, and sending to devices under Nearby.
-- `src/remote.rs` publishes a Bluetooth LE HID service (HID over GATT: a keyboard and a mouse report) through WinRT's `GattServiceProvider`, and turns the window's captured input into HID reports.
+- `src/remote.rs` (Windows) publishes a Bluetooth LE HID service (HID over GATT: a keyboard and a mouse report) through WinRT's `GattServiceProvider`, and turns the window's captured input into HID reports.
 - `src/ui_socket.rs` streams video and status to the window over a token-protected localhost WebSocket, and takes commands back.
 - `ui/` holds the interface. It decodes video with WebCodecs and animates with real spring physics (SwiftUI-style response and damping).
 - `icons/draw_icon.py` draws the icon (Ferris the crab on an AirPlay screen) and the layers the UI uses for its parallax tile.

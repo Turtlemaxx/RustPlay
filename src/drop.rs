@@ -821,7 +821,13 @@ fn reveal(path: &Path, select: bool) {
         }
     }
     #[cfg(not(windows))]
-    let _ = (path, select);
+    {
+        // No portable "select this file" on Linux: open its folder instead.
+        let target = if select { path.parent().unwrap_or(path) } else { path };
+        if let Err(err) = std::process::Command::new("xdg-open").arg(target).spawn() {
+            log::warn!("couldn't open {}: {err}", target.display());
+        }
+    }
 }
 
 #[cfg(test)]
